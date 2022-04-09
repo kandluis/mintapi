@@ -482,7 +482,11 @@ def mfa_page(
     if mfa_method is None:
         mfa_result = search_mfa_method(driver)
     else:
-        mfa_result = set_mfa_method(driver, mfa_method)
+        try:
+            mfa_result = set_mfa_method(driver, mfa_method)
+        except RuntimeError:
+            # do nothing, might not have login yet.
+            return
     mfa_token_input = mfa_result[0]
     mfa_token_button = mfa_result[1]
     mfa_method = mfa_result[2]
@@ -549,7 +553,9 @@ def set_mfa_method(driver, mfa_method):
         )
         mfa_method = mfa_result[MFA_METHOD_LABEL]
     except (NoSuchElementException, ElementNotInteractableException):
-        pass
+        raise RuntimeError(
+            "The Multifactor Method {} supplied is not available.".format(mfa_method)
+        )
     return mfa_token_input, mfa_token_button, mfa_method
 
 
