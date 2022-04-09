@@ -366,6 +366,8 @@ def sign_in(
             imap_server,
             imap_folder,
         )
+        # We already MFA'ed so don't try again.
+        mfa_method = None
         driver.implicitly_wait(1)  # seconds
         account_selection_page(driver, intuit_account)
         password_page(driver, password)
