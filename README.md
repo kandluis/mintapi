@@ -34,7 +34,7 @@ an MFA prompt, you'll be prompted on the command line for your code, which by de
 goes to SMS unless you specify `--mfa-method=email`. This will also persist a browser
 session in $HOME/.mintapi/session to avoid an MFA in the future, unless you specify `--session-path=None`.
 
-If you wish to simplify the number of arguments passed in the command line, you can use a configuration file by specifying `--config-file`.  For arguments such as `--extended-transactions`, you can add a line in your config file that says `extended-transactions`.  For other arguments that have input, such as `--start-date`, you would add a line such as `start-date=10/01/21`.  There are two exceptions to what you can add to the config file: email and password.  Since these arguments do not include `--`, you cannot add them to the config file.
+If you wish to simplify the number of arguments passed in the command line, you can use a configuration file by specifying `--config-file`.  For arguments such as `--transactions`, you can add a line in your config file that says `transactions`.  For other arguments that have input, such as `--start-date`, you would add a line such as `start-date=10/01/21`.  There are two exceptions to what you can add to the config file: email and password.  Since these arguments do not include `--`, you cannot add them to the config file.
 
 ### Linux Distributions (including Raspberry Pi OS)
 
@@ -72,10 +72,13 @@ mintapi --headless john@example.com my_password
 
 ### MFA Authentication Methods
 
-If `mfa-method` is email and your email host provides IMAP access, you can specify your IMAP login details.
-This will automate the retrieval of the MFA code from your email and entering it into Mint.  If you use IMAP in conjunction with `keyring`, then you can store your IMAP password (`imap-password`) in keyring.  To do so, simply omit `imap-password` and you will initially be prompted for the password associated with your IMAP account.  Then, on subsequent uses of your IMAP account, you will not have to specify your password.
+As of v2.0, `mfa_method` is only required if your login flow presents you with the option to select which Multifactor Authentication Method you wish to use, typically as a result of your account configured to accept different methods.  
+
+If `mintapi` detects that your Mint account uses IMAP and your email host provides IMAP access, you can specify your IMAP login details.  This will automate the retrieval of the MFA code from your email and entering it into Mint.  If you use IMAP in conjunction with `keyring`, then you can store your IMAP password (`imap-password`) in keyring.  To do so, simply omit `imap-password` and you will initially be prompted for the password associated with your IMAP account.  Then, on subsequent uses of your IMAP account, you will not have to specify your password.
 
 If `mfa-method` is soft-token then you must also pass your `mfa-token`. The `mfa-token` can be obtained by going to [your mint.com settings](https://mint.intuit.com/settings.event?filter=all) and clicking on 'Intuit Account'. From there go to *Sign In & Security* -> *Two-step verification*. From there, enable the top option however you wish (either text or email is fine). After that, start the process to enable the *Authenticator app* option and when you get the part where you see the QR code, **copy the manual setup code** that appears next to it. Careful where you store this as it allows anyone to generate TOTP codes. This is the token that you will pass to `mfa-token` in either the python api or from the command line.
+
+While Mint supports authentication via Voice, `mintapi` does not currently support this option.  Compatability with this method will be added in a later version.
 
 ### from Python
 
@@ -130,15 +133,12 @@ make calls to retrieve account/budget information.  We recommend using the
   mint.get_budgets()
 
   # Get transactions
-  mint.get_transactions() # as pandas dataframe
-  mint.get_transactions_csv(include_investment=False) # as raw csv data
-  mint.get_transactions_json(include_investment=False, skip_duplicates=False)
+  mint.get_transaction_data() # as pandas dataframe
 
   # Get transactions for a specific account
   accounts = mint.get_accounts(True)
   for account in accounts:
-    mint.get_transactions_csv(id=account["id"])
-    mint.get_transactions_json(id=account["id"])
+    mint.get_transaction_data(id=account["id"])
 
   # Get net worth
   mint.get_net_worth()
@@ -175,7 +175,7 @@ make calls to retrieve account/budget information.  We recommend using the
   )
   # now you can do all the normal api calls
   # ex:
-  mint.get_transactions()
+  mint.get_transaction_data()
 ```
 
 ---
@@ -183,14 +183,14 @@ Run it as a sub-process from your favorite language; `pip install mintapi` creat
 
 ```shell
     usage: mintapi [-h] [--session-path [SESSION_PATH]] [--accounts] [--investment]
-                   [--budgets | --budget_hist] [--net-worth] [--extended-accounts] [--transactions]
-                   [--extended-transactions] [--credit-score] [--credit-report]
+                   [--budgets | --budget_hist] [--net-worth] [--extended-accounts] 
+                   [--transactions] [--credit-score] [--credit-report]
                    [--exclude-inquiries] [--exclude-accounts] [--exclude-utilization]
                    [--start-date [START_DATE]] [--end-date [END_DATE]]
-                   [--include-investment] [--skip-duplicates] [--show-pending]
-                   [--filename FILENAME] [--keyring] [--headless] [--attention]
+                   [--limit] [--include-investment] [--show-pending]
+                   [--format] [--filename FILENAME] [--keyring] [--headless]
                    [--mfa-method {sms,email,soft-token}]
-                   [--categories]
+                   [--categories] [--attention]
                    email [password]
 
     positional arguments:
@@ -217,23 +217,20 @@ Run it as a sub-process from your favorite language; `pip install mintapi` creat
       --net-worth           Retrieve net worth information
       --extended-accounts   Retrieve extended account information (slower, implies --accounts)
       --transactions, -t    Retrieve transactions
-      --extended-transactions
-                            Retrieve transactions with extra information and
-                            arguments
       --start-date [START_DATE]
                             Earliest date for which to retrieve transactions.
-                            Used with --transactions or --extended-transactions. Format: mm/dd/yy
+                            Used with --transactions. Format: mm/dd/yy
       --end-date [END_DATE]
                             Latest date for which to retrieve transactions.
-                            Used with --transactions or --extended-transactions. Format: mm/dd/yy
+                            Used with --transactions. Format: mm/dd/yy
       --investments         Retrieve data related to your investments, whether they be retirement or         personal stock purchases
-      --include-investment  Used with --extended-transactions
-      --skip-duplicates     Used with --extended-transactions
-      --show-pending        Exclude pending transactions from being retrieved.
-                            Used with --extended-transactions
+      --include-investment  Used with --transactions
+      --limit               Number of records to include from the API.  Default is 5000.
+      --show-pending        Retrieve pending transactions.
+                            Used with --transactions
       --filename FILENAME, -f FILENAME
-                            write results to file. can be {csv,json} format.
-                            default is to write to stdout.
+                            write results to file. If no file is specified, then data is written to stdout.  Do not specify the file extension as it is determined based on the selection of `--format`.
+      --format              Determines the output format of the data, either `csv` or         `json`.  The default value is `json`.  If no `filename` is specified, then this determines the `stdout` format.  Otherwise, if a `filename` is specified, then this determines the file extension.
       --keyring             Use OS keyring for storing password information
       --headless            Whether to execute chromedriver with no visible
                             window.

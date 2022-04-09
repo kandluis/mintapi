@@ -3,7 +3,6 @@ import logging
 import os
 import sys
 import json
-from datetime import datetime
 import getpass
 
 import keyring
@@ -14,6 +13,9 @@ from mintapi.signIn import get_email_code
 from pandas import json_normalize
 
 logger = logging.getLogger("mintapi")
+
+JSON_FORMAT = "json"
+CSV_FORMAT = "csv"
 
 
 def parse_arguments(args):
@@ -114,16 +116,7 @@ def parse_arguments(args):
             {
                 "nargs": "?",
                 "default": None,
-                "help": "Latest date for transactions to be retrieved from. Used with --transactions or --extended-transactions. Format: mm/dd/yy",
-            },
-        ),
-        (
-            ("--extended-accounts",),
-            {
-                "action": "store_true",
-                "dest": "accounts_ext",
-                "default": False,
-                "help": "Retrieve extended account information (slower, implies --accounts)",
+                "help": "Latest date for transactions to be retrieved from. Used with --transactions. Format: mm/dd/yy",
             },
         ),
         (
@@ -151,17 +144,17 @@ def parse_arguments(args):
             },
         ),
         (
-            ("--extended-transactions",),
-            {
-                "action": "store_true",
-                "default": False,
-                "help": "Retrieve transactions with extra information and arguments",
-            },
-        ),
-        (
             ("--filename", "-f"),
             {
                 "help": "write results to file. can be {csv,json} format. default is to write to stdout."
+            },
+        ),
+        (
+            ("--format",),
+            {
+                "choices": [JSON_FORMAT, CSV_FORMAT],
+                "default": JSON_FORMAT,
+                "help": "The format used to return data.",
             },
         ),
         (
@@ -192,7 +185,7 @@ def parse_arguments(args):
             {
                 "action": "store_true",
                 "default": False,
-                "help": "Used with --extended-transactions",
+                "help": "Used with --transactions",
             },
         ),
         (
@@ -203,10 +196,18 @@ def parse_arguments(args):
             },
         ),
         (
+            ("--limit",),
+            {
+                "type": int,
+                "default": 5000,
+                "help": "Number of records to include from the API.  Default is 5000.",
+            },
+        ),
+        (
             ("--mfa-method",),
             {
                 "choices": ["sms", "email", "soft-token"],
-                "default": "sms",
+                "default": None,
                 "help": "The MFA method to automate.",
             },
         ),
@@ -245,15 +246,7 @@ def parse_arguments(args):
             {
                 "action": "store_false",
                 "default": True,
-                "help": "Exclude pending transactions from being retrieved. Used with --extended-transactions",
-            },
-        ),
-        (
-            ("--skip-duplicates",),
-            {
-                "action": "store_true",
-                "default": False,
-                "help": "Used with --extended-transactions",
+                "help": "Retrieve pending transactions. Used with --transactions",
             },
         ),
         (
@@ -261,7 +254,7 @@ def parse_arguments(args):
             {
                 "nargs": "?",
                 "default": None,
-                "help": "Earliest date for transactions to be retrieved from. Used with --transactions or --extended-transactions. Format: mm/dd/yy",
+                "help": "Earliest date for transactions to be retrieved from. Used with --transactions. Format: mm/dd/yy",
             },
         ),
         (
@@ -294,24 +287,6 @@ def parse_arguments(args):
     return cmdline.parse_args(args)
 
 
-def make_accounts_presentable(accounts, presentable_format="EXCEL"):
-    formatter = {
-        "DATE": "%Y-%m-%d",
-        "ISO8601": "%Y-%m-%dT%H:%M:%SZ",
-        "EXCEL": "%Y-%m-%d %H:%M:%S",
-    }[presentable_format]
-
-    for account in accounts:
-        for k, v in account.items():
-            if isinstance(v, datetime):
-                account[k] = v.strftime(formatter)
-    return accounts
-
-
-def print_accounts(accounts):
-    print(json.dumps(make_accounts_presentable(accounts), indent=2))
-
-
 def handle_password(type, prompt, email, password, use_keyring=False):
     if use_keyring and not password:
         # If we don't yet have a password, try prompting for it
@@ -328,50 +303,32 @@ def handle_password(type, prompt, email, password, use_keyring=False):
     return password
 
 
-def validate_file_extensions(options):
-    if any(
-        [
-            options.transactions,
-            options.extended_transactions,
-            options.investments,
-        ]
-    ):
-        if not (
-            options.filename is None
-            or options.filename.endswith(".csv")
-            or options.filename.endswith(".json")
-        ):
-            raise ValueError(
-                "File extension must be either .csv or .json for transaction data"
-            )
+def format_filename(options):
+    if options.filename is None:
+        filename = None
     else:
-        if not (options.filename is None or options.filename.endswith(".json")):
-            raise ValueError("File extension must be .json for non-transaction data")
+        filename = "{}.{}".format(options.filename, options.format)
+    return filename
 
 
 def output_data(options, data, attention_msg=None):
-    # output the data
-    if options.transactions or options.extended_transactions:
-        if options.filename is None:
-            print(data.to_json(orient="records"))
-        elif options.filename.endswith(".csv"):
-            data.to_csv(options.filename, index=False)
-        elif options.filename.endswith(".json"):
-            data.to_json(options.filename, orient="records")
-    else:
-        if options.filename is None:
+    filename = format_filename(options)
+    if filename is None:
+        if options.format == CSV_FORMAT:
+            print(json_normalize(data).to_csv(index=False))
+        else:
             print(json.dumps(data, indent=2))
         # NOTE: While this logic is here, unless validate_file_extensions
         #       allows for other data types to export to CSV, this will
         #       only include investment data.
-        elif options.filename.endswith(".csv"):
-            # NOTE: Currently, investment_data, which is a flat JSON, is the only
-            #       type of data that uses this section.  So, if we open this up to
-            #       other non-flat JSON data, we will need to revisit this.
-            json_normalize(data).to_csv(options.filename, index=False)
-        elif options.filename.endswith(".json"):
-            with open(options.filename, "w+") as f:
-                json.dump(data, f, indent=2)
+    elif options.format == CSV_FORMAT:
+        # NOTE: Currently, investment_data, which is a flat JSON, is the only
+        #       type of data that uses this section.  So, if we open this up to
+        #       other non-flat JSON data, we will need to revisit this.
+        json_normalize(data).to_csv(filename, index=False)
+    elif options.format == JSON_FORMAT:
+        with open(filename, "w+") as f:
+            json.dump(data, f, indent=2)
 
     if options.attention:
         if attention_msg is None or attention_msg == "":
@@ -393,8 +350,6 @@ def main():
     imap_password = options.imap_password
     mfa_method = options.mfa_method
 
-    validate_file_extensions(options)
-
     if not email:
         # If the user did not provide an e-mail, prompt for it
         email = input("Mint e-mail: ")
@@ -403,7 +358,7 @@ def main():
         "mintapi", "Mint password: ", email, password, options.keyring
     )
 
-    if mfa_method == "email" and imap_account:
+    if imap_account:
         imap_password = handle_password(
             "mintapi_imap",
             "IMAP password: ",
@@ -412,15 +367,11 @@ def main():
             options.keyring,
         )
 
-    if options.accounts_ext:
-        options.accounts = True
-
     if not any(
         [
             options.accounts,
             options.budgets,
             options.transactions,
-            options.extended_transactions,
             options.net_worth,
             options.credit_score,
             options.credit_report,
@@ -468,53 +419,47 @@ def main():
     data = None
     if options.accounts and options.budgets:
         try:
-            accounts = make_accounts_presentable(
-                mint.get_accounts(get_detail=options.accounts_ext)
-            )
+            data = mint.get_account_data(limit=options.limit)
         except Exception:
             accounts = None
 
         try:
-            budgets = mint.get_budgets()
+            budgets = mint.get_budgets(limit=options.limit)
         except Exception:
             budgets = None
 
         data = {"accounts": accounts, "budgets": budgets}
     elif options.budgets:
         try:
-            data = mint.get_budgets()
+            data = mint.get_budgets(limit=options.limit)
         except Exception:
             data = None
     elif options.budget_hist:
         try:
-            data = mint.get_budgets(hist=12)
+            data = mint.get_budgets(limit=options.limit, hist=12)
         except Exception:
             data = None
     elif options.accounts:
         try:
-            data = make_accounts_presentable(
-                mint.get_accounts(get_detail=options.accounts_ext)
-            )
+            data = mint.get_account_data(limit=options.limit)
         except Exception:
             data = None
     elif options.transactions:
-        data = mint.get_transactions(
-            start_date=options.start_date,
-            end_date=options.end_date,
-            include_investment=options.include_investment,
-        )
-    elif options.extended_transactions:
-        data = mint.get_detailed_transactions(
+        data = mint.get_transaction_data(
+            limit=options.limit,
             start_date=options.start_date,
             end_date=options.end_date,
             include_investment=options.include_investment,
             remove_pending=options.show_pending,
-            skip_duplicates=options.skip_duplicates,
         )
     elif options.categories:
-        data = mint.get_categories()
+        data = mint.get_categories(
+            limit=options.limit,
+        )
     elif options.investments:
-        data = mint.get_investment_data()
+        data = mint.get_investment_data(
+            limit=options.limit,
+        )
     elif options.net_worth:
         data = mint.get_net_worth()
     elif options.credit_score:
