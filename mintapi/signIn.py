@@ -549,9 +549,7 @@ def set_mfa_method(driver, mfa_method):
         )
         mfa_method = mfa_result[MFA_METHOD_LABEL]
     except (NoSuchElementException, ElementNotInteractableException):
-        raise RuntimeError(
-            "The Multifactor Method {} supplied is not available.".format(mfa_method)
-        )
+        pass
     return mfa_token_input, mfa_token_button, mfa_method
 
 
