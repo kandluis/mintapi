@@ -377,7 +377,7 @@ def sign_in(
     # Wait until the overview page has actually loaded, and if wait_for_sync==True, sync has completed.
     status_message = None
     if wait_for_sync:
-        handle_wait_for_sync(driver, wait_for_sync_timeout)
+        status_message = handle_wait_for_sync(driver, wait_for_sync_timeout)
     return status_message
 
 
@@ -658,6 +658,7 @@ def handle_wait_for_sync(driver, wait_for_sync_timeout):
             in status_web_element.get_attribute("innerHTML")
         )
         status_message = status_web_element.text
+        return status_message
     except (TimeoutException, StaleElementReferenceException):
         logger.warning(
             "Mint sync apparently incomplete after timeout. "
