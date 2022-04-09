@@ -321,12 +321,12 @@ def sign_in(
     """
     Takes in a web driver and gets it through the Mint sign in process
     """
-    driver.implicitly_wait(20)  # seconds
+    driver.implicitly_wait(3)  # seconds
     driver.get("https://www.mint.com")
     element = driver.find_element_by_link_text("Sign in")
     element.click()
 
-    WebDriverWait(driver, 20).until(
+    WebDriverWait(driver, 3).until(
         expected_conditions.presence_of_element_located(
             (
                 By.CSS_SELECTOR,
@@ -348,7 +348,7 @@ def sign_in(
             NoSuchElementException,
         ):
             handle_different_page_username_password(driver, email, password)
-            driver.implicitly_wait(20)  # seconds
+            driver.implicitly_wait(1)  # seconds
             password_page(driver, password)
 
         # Wait until logged in, just in case we need to deal with MFA.
