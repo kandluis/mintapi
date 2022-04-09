@@ -354,7 +354,6 @@ def sign_in(
         # Wait until logged in, just in case we need to deal with MFA.
         driver.implicitly_wait(1)  # seconds
         bypass_verified_user_page(driver)
-        bypass_passwordless_login_page(driver)
         if mfa_method is not None:
             mfa_selection_page(driver, mfa_method)
         mfa_page(
@@ -369,6 +368,8 @@ def sign_in(
         )
         account_selection_page(driver, intuit_account)
         password_page(driver, password)
+        bypass_passwordless_login_page(driver)
+        
 
     driver.implicitly_wait(20)  # seconds
     # Wait until the overview page has actually loaded, and if wait_for_sync==True, sync has completed.
