@@ -30,7 +30,6 @@ import oathtool
 
 logger = logging.getLogger("mintapi")
 
-
 class MFAMethodNotAvailableError(RuntimeError):
     pass
 
@@ -339,7 +338,7 @@ def sign_in(
         time.sleep(1)
         home_page(driver)
 
-    WebDriverWait(driver, 20).until(
+    WebDriverWait(driver, 3).until(
         expected_conditions.presence_of_element_located(
             (
                 By.CSS_SELECTOR,
