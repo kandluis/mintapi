@@ -22,6 +22,7 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver import ChromeOptions
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.ui import WebDriverWait
 from seleniumrequests import Chrome
@@ -697,6 +698,13 @@ def password_page(driver, password):
         ElementNotVisibleException,
         ElementNotInteractableException,
     ):
+        driver.find_element(
+            By.ID, "iux-password-verification-password"
+        ).send_keys(password)
+        button = driver.find_element(
+            By.XPATH, "//button[@data-testid='passwordVerificationContinueButton']")
+        driver.implicitly_wait(1)
+        ActionChains(driver).move_to_element(button).click(button).perform()
         logger.info("Not on Secondary MFA Password Screen")
 
 
