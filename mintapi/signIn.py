@@ -353,7 +353,8 @@ def sign_in(
 
     driver.implicitly_wait(1)  # seconds
     count = 0
-    while not driver.current_url.startswith("{}/".format(url)):
+    loggedIn = driver.current_url.startswith("{}/".format(url))
+    while not loggedIn:
         try:  # try to enter in credentials if username and password are on same page
             handle_same_page_username_password(driver, email, password)
         except (
@@ -375,7 +376,7 @@ def sign_in(
             driver.implicitly_wait(1)  # seconds
 
         # Wait until logged in, just in case we need to deal with MFA.
-
+        
         if not bypass_verified_user_page(driver):
             # if bypass_verified_user_page was present, then MFA already done
             bypass_passwordless_login_page(driver)
@@ -391,12 +392,18 @@ def sign_in(
                 imap_server,
                 imap_folder,
             )
+        loggedIn = driver.current_url.startswith("{}/".format(url))
+        if loggedIn:
+            break
         account_selection_page(driver, intuit_account)
+        loggedIn = driver.current_url.startswith("{}/".format(url))
+        if loggedIn:
+            break
         password_page(driver, password)
         # Give the overview page a chance to actually load.
         # If it doesn't, then there may be another round of MFA.
         try:
-            WebDriverWait(driver, 5).until(
+            WebDriverWait(driver, 10).until(
                 expected_conditions.url_contains("{}/".format(url))
             )
         except Exception:
@@ -667,7 +674,7 @@ def account_selection_page(driver, intuit_account):
             )
 
             account_input.click()
-        WebDriverWait(driver, 2).until(
+        WebDriverWait(driver, 10).until(
             expected_conditions.presence_of_element_located(
                 (
                     By.CSS_SELECTOR,
@@ -679,7 +686,7 @@ def account_selection_page(driver, intuit_account):
             By.CSS_SELECTOR,
             '#ius-sign-in-mfa-select-account-continue-btn, [data-testid="SelectAccountContinueButton"]',
         ).click()
-    except NoSuchElementException:
+    except (TimeoutException, NoSuchElementException):
         logger.info("Not on Account Selection Screen")
 
 
