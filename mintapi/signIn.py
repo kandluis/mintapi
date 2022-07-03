@@ -698,14 +698,21 @@ def password_page(driver, password):
         ElementNotVisibleException,
         ElementNotInteractableException,
     ):
-        driver.find_element(
-            By.ID, "iux-password-verification-password"
-        ).send_keys(password)
-        button = driver.find_element(
-            By.XPATH, "//button[@data-testid='passwordVerificationContinueButton']")
-        driver.implicitly_wait(1)
-        ActionChains(driver).move_to_element(button).click(button).perform()
-        logger.info("Not on Secondary MFA Password Screen")
+        try:
+            driver.find_element(
+                By.ID, "iux-password-verification-password"
+            ).send_keys(password)
+            button = driver.find_element(
+                By.XPATH, "//button[@data-testid='passwordVerificationContinueButton']")
+            driver.implicitly_wait(1)
+            ActionChains(driver).move_to_element(button).click(button).perform()
+        except (
+            NoSuchElementException,
+            StaleElementReferenceException,
+            ElementNotVisibleException,
+            ElementNotInteractableException,
+        ): 
+            logger.info("Not on Secondary MFA Password Screen")
 
 
 def handle_wait_for_sync(driver, wait_for_sync_timeout, fail_if_stale):
