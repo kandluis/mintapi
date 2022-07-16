@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import zipfile
+import itertools
 
 from selenium.common.exceptions import (
     ElementNotInteractableException,
@@ -19,6 +20,7 @@ from selenium.common.exceptions import (
     NoSuchElementException,
     StaleElementReferenceException,
     TimeoutException,
+    WebDriverException,
 )
 from selenium.webdriver import ChromeOptions
 from selenium.webdriver.common.by import By
@@ -57,16 +59,16 @@ MFA_METHODS = [
     },
     {
         constants.MFA_METHOD_LABEL: constants.MFA_VIA_EMAIL,
-        SELECT_CSS_SELECTORS_LABEL: "#ius-label-mfa-email-otp, #ius-mfa-email-otp-card-challenge, #ius-sublabel-mfa-email-otp",
+        SELECT_CSS_SELECTORS_LABEL: '#ius-label-mfa-email-otp, #ius-mfa-email-otp-card-challenge, #ius-sublabel-mfa-email-otp, [data-testid="challengePickerOption_EMAIL_OTP"]',
         INPUT_CSS_SELECTORS_LABEL: "#ius-mfa-confirm-code",
-        SPAN_CSS_SELECTORS_LABEL: '[data-testid="VerifyOtpHeaderText"]',
+        SPAN_CSS_SELECTORS_LABEL: '[data-testid="VerifyOtpHeaderText"], #VerifyOtpHeader',
         BUTTON_CSS_SELECTORS_LABEL: '#ius-mfa-otp-submit-btn, [data-testid="VerifyOtpSubmitButton"]',
     },
     {
         constants.MFA_METHOD_LABEL: constants.MFA_VIA_SMS,
         SELECT_CSS_SELECTORS_LABEL: "#ius-mfa-sms-otp-card-challenge",
         INPUT_CSS_SELECTORS_LABEL: "#ius-mfa-confirm-code",
-        SPAN_CSS_SELECTORS_LABEL: '[data-testid="VerifyOtpHeaderText"]',
+        SPAN_CSS_SELECTORS_LABEL: '[data-testid="VerifyOtpHeaderText"], #VerifyOtpHeader',
         BUTTON_CSS_SELECTORS_LABEL: '#ius-mfa-otp-submit-btn, [data-testid="VerifyOtpSubmitButton"]',
     },
 ]
@@ -143,9 +145,9 @@ def get_email_code(imap_account, imap_password, imap_server, imap_folder, delete
 
             logger.debug("DEBUG: EMAIL HEADER OK")
 
-            body = str(msg)
+            body = next(msg.walk()).get_payload(None, True).decode()
 
-            p = re.search(r"Verification code:<.*?(\d\d\d\d\d\d)$", body, re.S | re.M)
+            p = re.search(r"Verification code:<.*?(\d\d\d\d\d\d)\b", body, re.S | re.M)
             if p:
                 code = p.group(1)
             else:
@@ -376,7 +378,7 @@ def sign_in(
             driver.implicitly_wait(1)  # seconds
 
         # Wait until logged in, just in case we need to deal with MFA.
-        
+        handle_login_failures(driver)
         if not bypass_verified_user_page(driver):
             # if bypass_verified_user_page was present, then MFA already done
             bypass_passwordless_login_page(driver)
@@ -424,7 +426,10 @@ def sign_in(
 
 
 def home_page(driver):
-    element = driver.find_element(By.LINK_TEXT, "Sign in").click()
+    try:
+        element = driver.find_element(By.LINK_TEXT, "Sign in").click()
+    except WebDriverException:
+        logger.info("WebDriverException when clicking Sign In")
 
 
 def user_selection_page(driver):
@@ -475,6 +480,49 @@ def handle_different_page_username_password(driver, email):
             if username_element.text == email:
                 username_element.click()
                 break
+
+
+def handle_login_failures(driver):
+    try:
+        WebDriverWait(driver, 0).until(
+            expected_conditions.presence_of_element_located(
+                (
+                    By.XPATH,
+                    '//div[contains(text(), "We can\'t find anyone with ")][@id="ius-identifier-first-error"]',
+                )
+            )
+        )
+        raise RuntimeError(
+            "Login to Mint failed: Mint does not recognize your login email"
+        )
+    except TimeoutException:
+        pass
+
+    try:
+        WebDriverWait(driver, 0).until(
+            expected_conditions.presence_of_element_located(
+                (
+                    By.XPATH,
+                    "//div[contains(text(), 'The password you entered is incorrect.')]",
+                )
+            )
+        )
+        raise RuntimeError("Login to Mint failed: incorrect password")
+    except TimeoutException:
+        pass
+
+    try:
+        WebDriverWait(driver, 0).until(
+            expected_conditions.presence_of_element_located(
+                (
+                    By.ID,
+                    "RecaptchaHeader",
+                )
+            )
+        )
+        raise RuntimeError("Login to Mint failed: Captcha presented")
+    except TimeoutException:
+        pass
 
 
 def bypass_verified_user_page(driver):
@@ -643,7 +691,7 @@ def handle_email_by_imap(
         if mfa_code is None:
             mfa_code = (mfa_input_callback or input)(DEFAULT_MFA_INPUT_PROMPT)
         submit_mfa_code(mfa_token_input, mfa_token_button, mfa_code)
-    except (NoSuchElementException, ElementNotInteractableException):
+    except (NoSuchElementException, ElementNotInteractableException, EOFError):
         logger.info("Not on Email MFA Screen")
 
 
@@ -651,7 +699,7 @@ def handle_other_mfa(mfa_token_input, mfa_token_button, mfa_input_callback):
     try:
         mfa_code = (mfa_input_callback or input)(DEFAULT_MFA_INPUT_PROMPT)
         submit_mfa_code(mfa_token_input, mfa_token_button, mfa_code)
-    except (NoSuchElementException, ElementNotInteractableException):
+    except (NoSuchElementException, ElementNotInteractableException, EOFError):
         logger.info("Not on SMS or Authenticator MFA Screen")
 
 
@@ -694,10 +742,12 @@ def password_page(driver, password):
     # password only sometimes after mfa
     try:
         driver.find_element(
-            By.ID, "ius-sign-in-mfa-password-collection-current-password"
+            By.CSS_SELECTOR,
+            "#iux-password-confirmation-password, #ius-sign-in-mfa-password-collection-current-password",
         ).send_keys(password)
         driver.find_element(
-            By.ID, "ius-sign-in-mfa-password-collection-continue-btn"
+            By.CSS_SELECTOR,
+            '#ius-sign-in-mfa-password-collection-continue-btn, [data-testid="passwordVerificationContinueButton"]',
         ).submit()
     except (
         NoSuchElementException,
