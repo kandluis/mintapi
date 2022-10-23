@@ -66,7 +66,7 @@ MFA_METHODS = [
     },
     {
         constants.MFA_METHOD_LABEL: constants.MFA_VIA_SMS,
-        SELECT_CSS_SELECTORS_LABEL: "#ius-mfa-sms-otp-card-challenge",
+        SELECT_CSS_SELECTORS_LABEL: '#ius-mfa-sms-otp-card-challenge, [data-testid="challengePickerOption_SMS_OTP"]',
         INPUT_CSS_SELECTORS_LABEL: "#ius-mfa-confirm-code",
         SPAN_CSS_SELECTORS_LABEL: '[data-testid="VerifyOtpHeaderText"], #VerifyOtpHeader',
         BUTTON_CSS_SELECTORS_LABEL: '#ius-mfa-otp-submit-btn, [data-testid="VerifyOtpSubmitButton"]',
@@ -127,8 +127,13 @@ def get_email_code(imap_account, imap_password, imap_server, imap_folder, delete
             if not re.search("do_not_reply@intuit.com", frm, re.IGNORECASE):
                 continue
 
-            if not re.search("Your Mint Account", subject, re.IGNORECASE):
+            p = re.search(r"(\d\d\d\d\d\d) Mint code", subject)
+            if p:
+                code = p.group(1)
+            elif not re.search("Your Mint Account", subject, re.IGNORECASE):
                 continue
+            else:
+                code = ""
 
             date_tuple = email.utils.parsedate_tz(msg["Date"])
             if date_tuple:
@@ -145,13 +150,15 @@ def get_email_code(imap_account, imap_password, imap_server, imap_folder, delete
 
             logger.debug("DEBUG: EMAIL HEADER OK")
 
-            body = next(msg.walk()).get_payload(None, True).decode()
-
-            p = re.search(r"Verification code:<.*?(\d\d\d\d\d\d)\b", body, re.S | re.M)
-            if p:
-                code = p.group(1)
-            else:
-                logger.error("FAIL1")
+            if code == "":
+                body = next(msg.walk()).get_payload(None, True).decode()
+                p = re.search(
+                    r"Verification code:<.*?(\d\d\d\d\d\d)\b", body, re.S | re.M
+                )
+                if p:
+                    code = p.group(1)
+                else:
+                    logger.error("FAIL1")
 
             logger.debug("DEBUG: CODE FROM EMAIL:", code)
 
@@ -345,10 +352,12 @@ def sign_in(
         expected_conditions.presence_of_element_located(
             (
                 By.CSS_SELECTOR,
-                "#ius-link-use-a-different-id-known-device, #ius-userid, #ius-identifier, #ius-option-username",
+                ".ius-hosted-ui-main-container, #ius-link-use-a-different-id-known-device, #ius-userid, "
+                '#ius-identifier, #ius-option-username, [data-testid="IdentifierFirstSubmitButton"]',
             )
         )
     )
+
     driver.implicitly_wait(0)  # seconds
 
     user_selection_page(driver)
@@ -438,7 +447,10 @@ def user_selection_page(driver):
         driver.find_element(By.ID, "ius-link-use-a-different-id-known-device").click()
         WebDriverWait(driver, 20).until(
             expected_conditions.presence_of_element_located(
-                (By.CSS_SELECTOR, "#ius-userid, #ius-identifier, #ius-option-username")
+                (
+                    By.CSS_SELECTOR,
+                    '#ius-userid, #ius-identifier, #ius-option-username, [data-testid="IdentifierFirstSubmitButton"]',
+                )
             )
         )
     except NoSuchElementException:
@@ -530,7 +542,8 @@ def bypass_verified_user_page(driver):
     # returns True is page is bypassed
     try:
         skip_for_now = driver.find_element(
-            By.ID, "ius-verified-user-update-btn-skip"
+            By.CSS_SELECTOR,
+            '#ius-verified-user-update-btn-skip, [data-testid="VUUSkipButton"]',
         ).click()
         return True
     except (
@@ -558,7 +571,22 @@ def mfa_selection_page(driver, mfa_method):
 def bypass_passwordless_login_page(driver):
     # bypass "Sign in without a password next time" interstitial page
     try:
-        skip_for_now = driver.find_element(By.ID, "skipWebauthnRegistration").click()
+        skip_for_now = driver.find_element(
+            By.CSS_SELECTOR, "#skipWebauthnRegistration, #signInDifferentWay"
+        ).click()
+    except (
+        NoSuchElementException,
+        StaleElementReferenceException,
+        ElementNotVisibleException,
+        ElementNotInteractableException,
+    ):
+        pass
+    # bypass "Let's make sure you're you" if password login is allowed
+    try:
+        skip_for_now = driver.find_element(
+            By.CSS_SELECTOR,
+            '[data-testid="challengePickerOption_PASSWORD"]',
+        ).click()
     except (
         NoSuchElementException,
         StaleElementReferenceException,
@@ -716,12 +744,13 @@ def account_selection_page(driver, intuit_account):
             expected_conditions.presence_of_element_located(
                 (
                     By.CSS_SELECTOR,
-                    '[data-testid="SelectAccountForm"]',
+                    '[data-testid="SelectAccountForm"], [data-testid="IdFirstKnownContainer"]',
                 )
             )
         )
         select_account = driver.find_element(
-            By.CSS_SELECTOR, '[data-testid="SelectAccountForm"]'
+            By.CSS_SELECTOR,
+            '[data-testid="SelectAccountForm"], [data-testid="IdFirstKnownContainer"]',
         )
         if intuit_account is not None:
             account_input = select_account.find_element(
@@ -738,13 +767,13 @@ def account_selection_page(driver, intuit_account):
             expected_conditions.presence_of_element_located(
                 (
                     By.CSS_SELECTOR,
-                    "#ius-sign-in-mfa-select-account-continue-btn, [data-testid='SelectAccountContinueButton']",
+                    "#ius-sign-in-mfa-select-account-continue-btn, [data-testid='SelectAccountContinueButton'], [data-testid='AccountChoiceUsage_0']",
                 )
             )
         )
         driver.find_element(
             By.CSS_SELECTOR,
-            '#ius-sign-in-mfa-select-account-continue-btn, [data-testid="SelectAccountContinueButton"]',
+            '#ius-sign-in-mfa-select-account-continue-btn, [data-testid="SelectAccountContinueButton"], [data-testid="AccountChoiceUsage_0"]',
         ).click()
     except (TimeoutException, NoSuchElementException):
         logger.info("Not on Account Selection Screen")
