@@ -2,6 +2,29 @@
     New feature work occurs in the 2.x release series and only supports the new Mint UI / endpoints.
     Please see the README for more information.
     
+2.14
+---
+- backwards compatability when using positional arguments for email and password. (#592)
+
+2.13
+---
+- use a RESTful API architecture instead of heavily relying on Selenium (#482)
+  - you can opt-in to full use of this via `--use-rest-client` (CLI) or `use_rest_client=True` (Python)
+- improved detection of refresh status (#583)
+
+2.12
+---
+- update selenium-requests dep to >=2.0.3 which should future-proof chrome updates
+
+2.11
+---
+- prevent email MFA check from marking messages as read (#568)
+- handle additional refresh sync status message (#575)
+
+2.10
+---
+- update selenium-requests dep to >=2.0.1 (#553, #564, #566)
+
 2.9
 ---
 - various fixes to CSS selectors for login (#549, #552)

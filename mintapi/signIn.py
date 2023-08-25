@@ -110,7 +110,7 @@ def get_email_code(imap_account, imap_password, imap_server, imap_folder, delete
             count = count + 1
             if count > 3:
                 break
-            rv, data = imap_client.fetch(num, "(RFC822)")
+            rv, data = imap_client.fetch(num, "(BODY.PEEK[])")
             if rv != "OK":
                 raise RuntimeError("Unable to complete due to error message: " + rv)
 
@@ -130,7 +130,7 @@ def get_email_code(imap_account, imap_password, imap_server, imap_folder, delete
             p = re.search(r"(\d\d\d\d\d\d) Mint code", subject)
             if p:
                 code = p.group(1)
-            elif not re.search("Your Mint Account", subject, re.IGNORECASE):
+            elif not re.search("Your Mint (code|Account)", subject, re.IGNORECASE):
                 continue
             else:
                 code = ""
@@ -352,8 +352,13 @@ def sign_in(
         expected_conditions.presence_of_element_located(
             (
                 By.CSS_SELECTOR,
-                ".ius-hosted-ui-main-container, #ius-link-use-a-different-id-known-device, #ius-userid, "
-                '#ius-identifier, #ius-option-username, [data-testid="IdentifierFirstSubmitButton"]',
+                ".ius-hosted-ui-main-container, "
+                "#ius-link-use-a-different-id-known-device, "
+                "#ius-userid, "
+                "#ius-identifier, "
+                "#ius-option-username, "
+                '[data-testid="IdentifierFirstSubmitButton"], '
+                '[data-testid="AccountChoicesUseDifferentId"]',
             )
         )
     )
@@ -536,6 +541,21 @@ def handle_login_failures(driver):
     except TimeoutException:
         pass
 
+    try:
+        WebDriverWait(driver, 0).until(
+            expected_conditions.presence_of_element_located(
+                (
+                    By.XPATH,
+                    '//h2[contains(text(), "The feature you\'ve requested is temporarily unavailable")]',
+                )
+            )
+        )
+        raise RuntimeError(
+            "Login to Mint failed: Mint reports that it's temporarily unavailable: you may be blocked."
+        )
+    except TimeoutException:
+        pass
+
 
 def bypass_verified_user_page(driver):
     # bypass "Let's add your current mobile number" interstitial page
@@ -661,7 +681,9 @@ def search_mfa_method(driver):
                 if result is True:
                     break
         except (NoSuchElementException, ElementNotInteractableException):
-            logger.info("{} MFA Method Not Found".format(constants.MFA_METHOD_LABEL))
+            logger.info(
+                "{} MFA Method Not Found".format(method[constants.MFA_METHOD_LABEL])
+            )
     return mfa_token_input, mfa_token_button, mfa_method
 
 
@@ -822,14 +844,21 @@ def handle_wait_for_sync(driver, wait_for_sync_timeout, fail_if_stale):
                 (By.CSS_SELECTOR, ".AccountStatusBar")
             )
         )
-        WebDriverWait(driver, wait_for_sync_timeout).until(
-            lambda x: "Account refresh complete"
-            in status_web_element.get_attribute("innerHTML")
-        )
+
+        def refresh_complete(x):
+            statusHtml = status_web_element.get_attribute("innerHTML")
+
+            return (
+                ("Account refresh complete" in statusHtml)
+                or ("We can't update your" in statusHtml)
+                or ("need attention" in statusHtml)
+            )
+
+        WebDriverWait(driver, wait_for_sync_timeout).until(refresh_complete)
         return status_web_element.text
     except (TimeoutException, StaleElementReferenceException):
         logger.warning(exceptions.STALE_DATA_ERROR_MESSAGE)
         if fail_if_stale:
             raise exceptions.StaleDataException
-    except (exceptions.StaleDataException):
+    except exceptions.StaleDataException:
         sys.exit(1)
